@@ -76,7 +76,18 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 Put the generated value in `SECRET_KEY`. Never commit `.env` or a Supabase service-role key.
 
-## 2. Create and configure Supabase
+## Local client demo with SQLite
+
+For a local demonstration without a Supabase project, copy `.env.example` to `.env` and set:
+
+```env
+USE_LOCAL_DB=true
+SECRET_KEY=local-demo-secret-change-me
+SESSION_COOKIE_SECURE=false
+```
+
+Then run `python app.py`. The app creates `local_auth.db` automatically and supports local signup, login, dashboard protection, and logout. This SQLite mode is only for offline demos; production deployment should use Supabase Auth and `USE_LOCAL_DB=false`.
+
 
 1. Open [supabase.com](https://supabase.com), create an account, and create a new project.
 2. Wait for the project to finish provisioning.
