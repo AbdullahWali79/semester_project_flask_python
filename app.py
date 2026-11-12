@@ -14,7 +14,10 @@ from cryptography.fernet import Fernet, InvalidToken
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for
-from supabase import create_client
+try:
+    from supabase import create_client
+except ImportError:  # Supabase is optional when running the SQLite demo mode.
+    create_client = None
 
 from config import Config
 
@@ -56,13 +59,16 @@ def create_app() -> Flask:
                 )
             """)
             connection.commit()
-        Config.validate()
-        app.extensions["supabase"] = create_client(Config.SUPABASE_URL, Config.SUPABASE_ANON_KEY)
-    except Exception as exc:
-        # Keep the app importable for health checks and friendly setup errors.
-        logger.error("Supabase configuration is unavailable: %s", exc)
         app.extensions["supabase"] = None
-        app.config["SETUP_ERROR"] = str(exc)
+    else:
+        try:
+            Config.validate()
+            app.extensions["supabase"] = create_client(Config.SUPABASE_URL, Config.SUPABASE_ANON_KEY)
+        except Exception as exc:
+            # Keep the app importable for health checks and friendly setup errors.
+            logger.error("Supabase configuration is unavailable: %s", exc)
+            app.extensions["supabase"] = None
+            app.config["SETUP_ERROR"] = str(exc)
 
     def csrf_token():
         if "csrf_token" not in session:
@@ -108,6 +114,22 @@ def create_app() -> Flask:
                 flash("Enter your email and password.", "error")
                 return render_template("login.html", email=email)
             try:
+                if Config.USE_LOCAL_DB:
+                    with local_db() as connection:
+                        user = connection.execute(
+                            "SELECT * FROM users WHERE email = ?", (email,)
+                        ).fetchone()
+                    if not user or not check_password_hash(user["password_hash"], password):
+                        raise ValueError("Invalid local credentials")
+                    session.clear()
+                    session["user"] = {
+                        "id": user["id"],
+                        "email": user["email"],
+                        "user_metadata": {"full_name": user["full_name"]},
+                    }
+                    session.permanent = True
+                    flash("Welcome back.", "success")
+                    return redirect(url_for("dashboard"))
                 response = supabase_or_error().auth.sign_in_with_password({"email": email, "password": password})
                 session.clear()
                 session["user"] = response.user.model_dump() if hasattr(response.user, "model_dump") else response.user
@@ -137,6 +159,15 @@ def create_app() -> Flask:
                 flash("Passwords do not match.", "error")
             else:
                 try:
+                    if Config.USE_LOCAL_DB:
+                        with local_db() as connection:
+                            connection.execute(
+                                "INSERT INTO users (full_name, email, password_hash) VALUES (?, ?, ?)",
+                                (full_name, email, generate_password_hash(password)),
+                            )
+                            connection.commit()
+                        flash("Account created. You can now sign in.", "success")
+                        return redirect(url_for("login"))
                     result = supabase_or_error().auth.sign_up({
                         "email": email,
                         "password": password,
