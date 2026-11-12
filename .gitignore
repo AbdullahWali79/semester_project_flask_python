@@ -1,0 +1,9 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.flask_session/
+.vscode/
+.idea/
+.DS_Store
